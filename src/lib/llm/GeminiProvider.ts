@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 import ModelProvider, { MediaIntent } from './ModelProvider.js';
+import { profileMap } from '../../config/index.js';
 
 /**
  * Google Gemini provider implementation
@@ -28,7 +29,7 @@ class GeminiProvider extends ModelProvider {
       "You're an assistant that extracts media request information from user prompts.",
       "You are a media request assistant. Extract media information from user prompts and respond ONLY with valid JSON."
     );
-    return `${modifiedBasePrompt}\n\nRespond with JSON only, no additional text or formatting.`;
+    return `${modifiedBasePrompt}\n\nAvailable profiles (by media type): ${JSON.stringify(profileMap)}\nWhen returning a profile, pick the numeric id under the correct media type ('movies' or 'tv').\nRespond with JSON only, no additional text or formatting.`;
   }
 
   /**

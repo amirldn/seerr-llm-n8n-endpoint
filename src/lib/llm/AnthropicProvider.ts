@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import ModelProvider, { MediaIntent } from './ModelProvider.js';
+import { profileMap } from '../../config/index.js';
 import { Tool, ToolUseBlock } from '@anthropic-ai/sdk/resources/messages.mjs';
 
 /**
@@ -64,9 +65,9 @@ ${basePrompt}`; // Append JSON structure and examples for clarity
             description: "Season information. For TV shows, either 'all' for all seasons, or an array of specific season numbers (e.g., [1, 2, 3]). Should be omitted or null for movies."
           },
           profile: {
-            type: ["string", "null"],
-            enum: ["heb", null],
-            description: "The content profile. 'heb' if Hebrew language content is requested, otherwise null or omit."
+            // Numeric profile id referencing the application's profileMap for the given media type
+            oneOf: [ { type: "integer" }, { type: "null" } ],
+            description: `Numeric profile id referencing the available profiles per media type: ${JSON.stringify(profileMap)}. Choose the id under the appropriate media type ('movies' or 'tv') or return the default if no specific profile is required.`
           }
         },
         required: ["title", "mediaType"]

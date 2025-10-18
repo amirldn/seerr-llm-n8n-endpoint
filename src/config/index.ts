@@ -10,19 +10,20 @@ if (!OVERSEERR_URL || !OVERSEERR_API_KEY) {
   process.exit(1);
 }
 
-export interface ProfileConfig {
-  profileId: number;
-}
-
 export interface ProfileMap {
-  [key: string]: ProfileConfig;
+  [mediaType: string]: {
+    [profileName: string]: number;
+  };
 }
 
 export const profileMap: ProfileMap = {
-  heb: {
-    profileId: 7,
+  movies: {
+    heb: 7,
+    '4k': 8,
+    default: 6,
   },
-  default: {
-    profileId: 6,
-  },
+  tv: {
+    '4k': 4,
+    default: 6,
+  }
 }; 

@@ -4,7 +4,7 @@ export interface MediaIntent {
   title: string;
   mediaType: "movie" | "tv";
   seasons?: "all" | number[];
-  profile?: "heb" | null;
+  profile: number;
 }
 
 export async function extractMediaIntent(prompt: string): Promise<MediaIntent> {

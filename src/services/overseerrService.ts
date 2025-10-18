@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { OVERSEERR_URL, OVERSEERR_API_KEY, profileMap, ProfileConfig } from '../config/index.js';
+import { OVERSEERR_URL, OVERSEERR_API_KEY, profileMap } from '../config/index.js';
 import { MediaIntent } from './mediaIntentService.js'; // Assuming MediaIntent will be used here
 
 export interface OverseerrSearchResult {
@@ -31,9 +31,7 @@ export async function searchOverseerr(title: string): Promise<OverseerrSearchRes
 }
 
 export async function requestMedia(intent: MediaIntent, mediaId: number): Promise<unknown> {
-  const mediaType = intent.mediaType;
-  const profileKey = intent.profile === "heb" ? "heb" : "default";
-  const selectedProfile: ProfileConfig = profileMap[profileKey] || profileMap.default;
+  const { mediaType, profile } = intent;
 
   interface RequestPayload {
     mediaType: string;
@@ -46,7 +44,13 @@ export async function requestMedia(intent: MediaIntent, mediaId: number): Promis
   const payload: RequestPayload = {
     mediaType,
     mediaId,
-    profileId: selectedProfile.profileId,
+    // If the intent specifies a numeric profile use it, otherwise fall back to the
+    // configured default profile for the media type (movies vs tv) from profileMap.
+    profileId: profile ?? ((): number => {
+      const mapKey = mediaType === 'movie' ? 'movies' : 'tv';
+      const defaultProfile = profileMap[mapKey]?.default ?? profileMap['movies']?.default ?? 0;
+      return defaultProfile;
+    })()
   };
 
   if (mediaType === 'tv') {
@@ -59,7 +63,6 @@ export async function requestMedia(intent: MediaIntent, mediaId: number): Promis
       payload.seasons = [1]; // Default to season 1 if not specified
     }
   }
-
   console.log("📦 Requesting media with payload:", payload);
   try {
     const res = await axios.post(

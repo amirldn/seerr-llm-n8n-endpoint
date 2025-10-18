@@ -69,11 +69,32 @@ Send a POST request to `/api/prompt` with a JSON body containing your prompt.
 }
 ```
 
+
+Language Support:
+
+```json
+{ "prompt": "Download the movie catch me if you can in spanish" }
+```
+
+4K example:
+
+```json
+{ "prompt": "Please download Avengers in 4K" }
+```
+
+Expected LLM extraction (example):
+
+```json
+{ "title": "The Avengers", "mediaType": "movie", "profile": 8 }
+```
+
+You can update `src/config/index.ts` with your own Sonarr/Radarr profile IDs by querying your services (for example: `http://homeserver.local:5055/api/v1/service/sonarr/0` and `http://homeserver.local:5055/api/v1/service/radarr/0`) and build your `profileMap` accordingly.
+
+
 Some other prompt examples:
 - "download all season of breaking bad"
 - "download Aladdin in hebrew"
 - "download the latest season of solo leveling"
-
 ## Docker Compose / Portainer
 
 You can easily deploy OverseerAgent using Docker Compose, which also works seamlessly with Portainer.

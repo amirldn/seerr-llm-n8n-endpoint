@@ -7,7 +7,7 @@ export interface MediaIntent {
   title: string;
   mediaType: "movie" | "tv";
   seasons?: "all" | number[];
-  profile?: "heb" | null;
+  profile: number;
 }
 
 class ModelProvider {
@@ -43,13 +43,14 @@ Analyze the prompt and return a JSON object with the following structure:
   "title": "exact title of the movie/show",
   "mediaType": "movie" or "tv",
   "seasons": "all" or [1,2,3] (array of season numbers, only for TV shows),
-  "profile": "heb" or null (if Hebrew content is requested)
+  "profile": number (profile id from the provided profile map; the LLM will be given a profile map to choose from if none is specified return default profile)
 }
 
 Examples:
-- "I want to watch Breaking Bad season 1" → {"title": "Breaking Bad", "mediaType": "tv", "seasons": [1]}
-- "Add all seasons of Friends" → {"title": "Friends", "mediaType": "tv", "seasons": "all"}
-- "I need the Hebrew movie Lebanon" → {"title": "Lebanon", "mediaType": "movie", "profile": "heb"}`;
+- "I want to watch Breaking Bad season 1" → {"title": "Breaking Bad", "mediaType": "tv", "seasons": [1], "profile": 6};
+- "Add all seasons of Friends" → {"title": "Friends", "mediaType": "tv", "seasons": "all", "profile": 6};
+- "I need the Hebrew movie Lebanon" → {"title": "Lebanon", "mediaType": "movie", "profile": 7};
+- "Download Avengers in 4K" → {"title": "The Avengers", "mediaType": "movie", "profile": 8}`;
   }
 
   /**
@@ -84,9 +85,9 @@ Examples:
         throw new Error("Invalid seasons format for mediaType 'tv'. Should be 'all' or an array of numbers.");
     }
 
-    // Ensure profile is valid if present
-    if (parsed.profile && parsed.profile !== "heb") {
-        throw new Error("Invalid profile value. Should be 'heb' or null/undefined.");
+    // Ensure profile is valid if present (should be a number or null)
+    if (parsed.profile !== undefined && parsed.profile !== null && typeof parsed.profile !== "number") {
+      throw new Error("Invalid profile value. Should be a numeric profile id or null/undefined.");
     }
 
     // After validation, we know the parsed object conforms to MediaIntent
