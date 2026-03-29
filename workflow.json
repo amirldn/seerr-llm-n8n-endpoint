@@ -20,7 +20,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Validate input and log user info\nconst body = $input.first().json.body;\n\nif (!body || !body.prompt || typeof body.prompt !== 'string' || body.prompt.trim().length === 0) {\n  return [{\n    json: {\n      error: true,\n      message: \"Please provide a prompt, e.g. 'download season 3 of Severance'\"\n    }\n  }];\n}\n\nconst prompt = body.prompt.trim().substring(0, 500);\nconst user = body.user || 'Unknown';\nconst device = body.device || 'Unknown';\n\nconsole.log(`[Media Request] User: ${user} | Device: ${device} | Prompt: ${prompt}`);\n\nreturn [{\n  json: {\n    prompt,\n    user,\n    device,\n    error: false\n  }\n}];"
+        "jsCode": "// Validate input and log device info\nconst body = $input.first().json.body;\n\nif (!body || !body.prompt || typeof body.prompt !== 'string' || body.prompt.trim().length === 0) {\n  return [{\n    json: {\n      error: true,\n      message: \"Please provide a prompt, e.g. 'download season 3 of Severance'\"\n    }\n  }];\n}\n\nconst prompt = body.prompt.trim().substring(0, 500);\nconst device = body.device || 'Unknown';\n\nconsole.log(`[Media Request] Device: ${device} | Prompt: ${prompt}`);\n\nreturn [{\n  json: {\n    prompt,\n    device,\n    error: false\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -120,7 +120,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Parse and validate LLM JSON response\nconst input = $input.first().json;\nconst user = $('Validate Input').first().json.user;\nconst device = $('Validate Input').first().json.device;\n\n// Gemini returns content.parts[0].text\nlet llmText;\nif (input.content && input.content.parts && input.content.parts[0] && input.content.parts[0].text) {\n  llmText = input.content.parts[0].text;\n} else if (typeof input.text === 'string') {\n  llmText = input.text;\n} else if (typeof input.content === 'string') {\n  llmText = input.content;\n} else {\n  llmText = JSON.stringify(input);\n}\n\n// Strip markdown code fences if present\nllmText = llmText.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n\nlet intent;\ntry {\n  intent = JSON.parse(llmText);\n} catch (e) {\n  return [{\n    json: {\n      error: true,\n      message: \"Sorry, I couldn't understand that request. Try something like: 'download season 3 of Severance'\",\n      user,\n      device\n    }\n  }];\n}\n\nif (!intent.title || !intent.mediaType) {\n  return [{\n    json: {\n      error: true,\n      message: \"Sorry, I couldn't extract a title from your request. Try being more specific.\",\n      user,\n      device\n    }\n  }];\n}\n\nif (!['movie', 'tv'].includes(intent.mediaType)) {\n  intent.mediaType = 'tv';\n}\n\nreturn [{\n  json: {\n    title: intent.title,\n    mediaType: intent.mediaType,\n    seasons: intent.seasons || null,\n    isAnime: intent.isAnime === true,\n    encodedTitle: encodeURIComponent(intent.title),\n    user,\n    device,\n    error: false\n  }\n}];"
+        "jsCode": "// Parse and validate LLM JSON response\nconst input = $input.first().json;\nconst device = $('Validate Input').first().json.device;\n\n// Gemini returns content.parts[0].text\nlet llmText;\nif (input.content && input.content.parts && input.content.parts[0] && input.content.parts[0].text) {\n  llmText = input.content.parts[0].text;\n} else if (typeof input.text === 'string') {\n  llmText = input.text;\n} else if (typeof input.content === 'string') {\n  llmText = input.content;\n} else {\n  llmText = JSON.stringify(input);\n}\n\n// Strip markdown code fences if present\nllmText = llmText.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n\nlet intent;\ntry {\n  intent = JSON.parse(llmText);\n} catch (e) {\n  return [{\n    json: {\n      error: true,\n      message: \"Sorry, I couldn't understand that request. Try something like: 'download season 3 of Severance'\",\n      device\n    }\n  }];\n}\n\nif (!intent.title || !intent.mediaType) {\n  return [{\n    json: {\n      error: true,\n      message: \"Sorry, I couldn't extract a title from your request. Try being more specific.\",\n      device\n    }\n  }];\n}\n\nif (!['movie', 'tv'].includes(intent.mediaType)) {\n  intent.mediaType = 'tv';\n}\n\nreturn [{\n  json: {\n    title: intent.title,\n    mediaType: intent.mediaType,\n    seasons: intent.seasons || null,\n    isAnime: intent.isAnime === true,\n    encodedTitle: encodeURIComponent(intent.title),\n    device,\n    error: false\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -168,7 +168,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ success: false, message: $json.message, requestedBy: $json.user, device: $json.device }) }}",
+        "responseBody": "={{ JSON.stringify({ success: false, message: $json.message, device: $json.device }) }}",
         "options": {
           "responseCode": 400
         }
@@ -207,7 +207,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Process Seerr search results and build request\nconst searchData = $input.first().json;\nconst intent = $('Parse LLM Response').first().json;\nconst results = searchData.results || [];\n\nif (results.length === 0) {\n  return [{\n    json: {\n      error: true,\n      action: 'respond',\n      message: \"Couldn't find '\" + intent.title + \"' on Seerr. Check the title and try again.\",\n      user: intent.user,\n      device: intent.device\n    }\n  }];\n}\n\n// Find best matching result (prefer exact mediaType match)\nlet match = results.find(r => r.mediaType === intent.mediaType) || results[0];\nconst title = match.name || match.title;\nconst mediaType = match.mediaType;\nconst tmdbId = match.id;\n\n// Check availability status\nconst status = match.mediaInfo?.status || 1;\n\nif (status === 5) {\n  return [{\n    json: {\n      error: false,\n      action: 'respond',\n      message: \"'\" + title + \"' is already fully available on Plex!\",\n      user: intent.user,\n      device: intent.device\n    }\n  }];\n}\n\nif (status === 2 || status === 3) {\n  return [{\n    json: {\n      error: false,\n      action: 'respond',\n      message: \"'\" + title + \"' has already been requested and is being processed.\",\n      user: intent.user,\n      device: intent.device\n    }\n  }];\n}\n\n// Build request payload\nlet requestBody = {\n  mediaType: mediaType,\n  mediaId: tmdbId\n};\n\n// Route to anime servers if detected as anime\n// Seerr server IDs: Sonarr Anime=2, Radarr Anime=2\nif (intent.isAnime) {\n  if (mediaType === 'tv') {\n    requestBody.serverId = 2; // Sonarr Anime\n  } else {\n    requestBody.serverId = 2; // Radarr Anime\n  }\n}\n\nif (mediaType === 'tv') {\n  if (intent.seasons === 'all' || intent.seasons === null) {\n    requestBody.seasons = 'all';\n  } else if (Array.isArray(intent.seasons)) {\n    requestBody.seasons = intent.seasons;\n  }\n}\n\nconst seasonText = mediaType === 'tv'\n  ? (requestBody.seasons === 'all' ? ' (all seasons)' : ' season(s) ' + (Array.isArray(requestBody.seasons) ? requestBody.seasons.join(', ') : requestBody.seasons))\n  : '';\nconst animeText = intent.isAnime ? ' [anime]' : '';\n\nreturn [{\n  json: {\n    error: false,\n    action: 'request',\n    requestBody,\n    title,\n    seasonText,\n    animeText,\n    user: intent.user,\n    device: intent.device\n  }\n}];"
+        "jsCode": "// Process Seerr search results and build request\nconst searchData = $input.first().json;\nconst intent = $('Parse LLM Response').first().json;\nconst results = searchData.results || [];\n\nif (results.length === 0) {\n  return [{\n    json: {\n      error: true,\n      action: 'respond',\n      message: \"Couldn't find '\" + intent.title + \"' on Seerr. Check the title and try again.\",\n      device: intent.device\n    }\n  }];\n}\n\nlet match = results.find(r => r.mediaType === intent.mediaType) || results[0];\nconst title = match.name || match.title;\nconst mediaType = match.mediaType;\nconst tmdbId = match.id;\n\nconst status = match.mediaInfo?.status || 1;\n\nif (status === 5) {\n  return [{\n    json: {\n      error: false,\n      action: 'respond',\n      message: \"'\" + title + \"' is already fully available on Plex!\",\n      device: intent.device\n    }\n  }];\n}\n\nif (status === 2 || status === 3) {\n  return [{\n    json: {\n      error: false,\n      action: 'respond',\n      message: \"'\" + title + \"' has already been requested and is being processed.\",\n      device: intent.device\n    }\n  }];\n}\n\nlet requestBody = {\n  mediaType: mediaType,\n  mediaId: tmdbId\n};\n\nif (intent.isAnime) {\n  if (mediaType === 'tv') {\n    requestBody.serverId = 2;\n  } else {\n    requestBody.serverId = 2;\n  }\n}\n\nif (mediaType === 'tv') {\n  if (intent.seasons === 'all' || intent.seasons === null) {\n    requestBody.seasons = 'all';\n  } else if (Array.isArray(intent.seasons)) {\n    requestBody.seasons = intent.seasons;\n  }\n}\n\nconst seasonText = mediaType === 'tv'\n  ? (requestBody.seasons === 'all' ? ' (all seasons)' : ' season(s) ' + (Array.isArray(requestBody.seasons) ? requestBody.seasons.join(', ') : requestBody.seasons))\n  : '';\nconst animeText = intent.isAnime ? ' [anime]' : '';\n\nreturn [{\n  json: {\n    error: false,\n    action: 'request',\n    requestBody,\n    title,\n    seasonText,\n    animeText,\n    device: intent.device\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -254,7 +254,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ success: true, message: $json.message, requestedBy: $json.user, device: $json.device }) }}",
+        "responseBody": "={{ JSON.stringify({ success: true, message: $json.message, device: $json.device }) }}",
         "options": {}
       },
       "type": "n8n-nodes-base.respondToWebhook",
@@ -294,7 +294,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Build final success response\nconst prev = $('Process Results').first().json;\nconst seerrResponse = $input.first().json;\n\nlet message;\nif (seerrResponse.statusCode && seerrResponse.statusCode >= 400) {\n  message = \"Failed to request '\" + prev.title + \"': \" + (seerrResponse.message || 'Seerr returned an error');\n  return [{\n    json: {\n      success: false,\n      message,\n      requestedBy: prev.user,\n      device: prev.device\n    }\n  }];\n}\n\nmessage = \"Requested '\" + prev.title + \"'\" + prev.seasonText + prev.animeText;\n\nreturn [{\n  json: {\n    success: true,\n    message,\n    requestedBy: prev.user,\n    device: prev.device\n  }\n}];"
+        "jsCode": "// Build final success response\nconst prev = $('Process Results').first().json;\nconst seerrResponse = $input.first().json;\n\nlet message;\nif (seerrResponse.statusCode && seerrResponse.statusCode >= 400) {\n  message = \"Failed to request '\" + prev.title + \"': \" + (seerrResponse.message || 'Seerr returned an error');\n  return [{\n    json: {\n      success: false,\n      message,\n      device: prev.device\n    }\n  }];\n}\n\nmessage = \"Requested '\" + prev.title + \"'\" + prev.seasonText + prev.animeText;\n\nreturn [{\n  json: {\n    success: true,\n    message,\n    device: prev.device\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -308,7 +308,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ success: $json.success, message: $json.message, requestedBy: $json.requestedBy, device: $json.device }) }}",
+        "responseBody": "={{ JSON.stringify({ success: $json.success, message: $json.message, device: $json.device }) }}",
         "options": {}
       },
       "type": "n8n-nodes-base.respondToWebhook",
@@ -323,7 +323,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ success: false, message: $json.message, requestedBy: $json.user, device: $json.device }) }}",
+        "responseBody": "={{ JSON.stringify({ success: false, message: $json.message, device: $json.device }) }}",
         "options": {
           "responseCode": 404
         }
