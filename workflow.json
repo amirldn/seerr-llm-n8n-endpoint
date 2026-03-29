@@ -1,0 +1,543 @@
+{
+  "name": "Media Request Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "media-request",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -800,
+        300
+      ],
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "webhookId": "a2ad1af1-3898-41c7-af03-f69cdaed3a7a"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate input and log user info\nconst body = $input.first().json.body;\n\nif (!body || !body.prompt || typeof body.prompt !== 'string' || body.prompt.trim().length === 0) {\n  return [{\n    json: {\n      error: true,\n      message: \"Please provide a prompt, e.g. 'download season 3 of Severance'\"\n    }\n  }];\n}\n\nconst prompt = body.prompt.trim().substring(0, 500);\nconst user = body.user || 'Unknown';\nconst device = body.device || 'Unknown';\n\nconsole.log(`[Media Request] User: ${user} | Device: ${device} | Prompt: ${prompt}`);\n\nreturn [{\n  json: {\n    prompt,\n    user,\n    device,\n    error: false\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        300
+      ],
+      "id": "validate-input",
+      "name": "Validate Input"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "check-error",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -320,
+        300
+      ],
+      "id": "check-input-error",
+      "name": "Input Valid?"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, message: $json.message }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -80,
+        460
+      ],
+      "id": "respond-error-input",
+      "name": "Error Response (Input)"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are a media intent extractor. Given a natural language request about downloading or requesting a movie or TV show, extract the following as valid JSON and NOTHING else (no markdown, no explanation):\n\n{\n  \"title\": \"the title of the movie or TV show\",\n  \"mediaType\": \"movie\" or \"tv\",\n  \"seasons\": [1, 2, 3] or \"all\" (only for TV shows, omit for movies),\n  \"isAnime\": true or false\n}\n\nRules:\n- If the user says \"download X\" or \"request X\" or \"get X\" or \"add X\", extract the title\n- If it's clearly a movie, set mediaType to \"movie\"\n- If it's clearly a TV show, set mediaType to \"tv\"\n- If unclear, make your best guess based on the title\n- For TV shows: if specific seasons are mentioned, list them as numbers. If no seasons mentioned, use \"all\"\n- For movies: do NOT include the seasons field\n- Set isAnime to true if the title is an anime (Japanese animation), or if the user explicitly says \"anime\". Otherwise false.\n- Output ONLY valid JSON, nothing else\n\nExamples:\nInput: \"download season 3 of Severance\"\nOutput: {\"title\": \"Severance\", \"mediaType\": \"tv\", \"seasons\": [3], \"isAnime\": false}\n\nInput: \"get me breaking bad seasons 1 through 3\"\nOutput: {\"title\": \"Breaking Bad\", \"mediaType\": \"tv\", \"seasons\": [1, 2, 3], \"isAnime\": false}\n\nInput: \"request the movie Oppenheimer\"\nOutput: {\"title\": \"Oppenheimer\", \"mediaType\": \"movie\", \"isAnime\": false}\n\nInput: \"download all of attack on titan\"\nOutput: {\"title\": \"Attack on Titan\", \"mediaType\": \"tv\", \"seasons\": \"all\", \"isAnime\": true}\n\nInput: \"get the anime movie Suzume\"\nOutput: {\"title\": \"Suzume\", \"mediaType\": \"movie\", \"isAnime\": true}\n\nInput: \"add demon slayer season 4\"\nOutput: {\"title\": \"Demon Slayer: Kimetsu no Yaiba\", \"mediaType\": \"tv\", \"seasons\": [4], \"isAnime\": true}\n\nInput: \"download one piece\"\nOutput: {\"title\": \"One Piece\", \"mediaType\": \"tv\", \"seasons\": \"all\", \"isAnime\": true}\n\nInput: \"download Dune Part Two\"\nOutput: {\"title\": \"Dune: Part Two\", \"mediaType\": \"movie\", \"isAnime\": false}",
+              "role": "model"
+            },
+            {
+              "content": "={{ $json.prompt }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        -80,
+        160
+      ],
+      "id": "gemini-extract",
+      "name": "Gemini Extract Intent",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse and validate LLM JSON response\nconst input = $input.first().json;\nconst user = $('Validate Input').first().json.user;\nconst device = $('Validate Input').first().json.device;\n\n// Gemini returns content.parts[0].text\nlet llmText;\nif (input.content && input.content.parts && input.content.parts[0] && input.content.parts[0].text) {\n  llmText = input.content.parts[0].text;\n} else if (typeof input.text === 'string') {\n  llmText = input.text;\n} else if (typeof input.content === 'string') {\n  llmText = input.content;\n} else {\n  llmText = JSON.stringify(input);\n}\n\n// Strip markdown code fences if present\nllmText = llmText.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n\nlet intent;\ntry {\n  intent = JSON.parse(llmText);\n} catch (e) {\n  return [{\n    json: {\n      error: true,\n      message: \"Sorry, I couldn't understand that request. Try something like: 'download season 3 of Severance'\",\n      user,\n      device\n    }\n  }];\n}\n\nif (!intent.title || !intent.mediaType) {\n  return [{\n    json: {\n      error: true,\n      message: \"Sorry, I couldn't extract a title from your request. Try being more specific.\",\n      user,\n      device\n    }\n  }];\n}\n\nif (!['movie', 'tv'].includes(intent.mediaType)) {\n  intent.mediaType = 'tv';\n}\n\nreturn [{\n  json: {\n    title: intent.title,\n    mediaType: intent.mediaType,\n    seasons: intent.seasons || null,\n    isAnime: intent.isAnime === true,\n    encodedTitle: encodeURIComponent(intent.title),\n    user,\n    device,\n    error: false\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        160
+      ],
+      "id": "parse-llm",
+      "name": "Parse LLM Response"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "check-parse-error",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        400,
+        160
+      ],
+      "id": "check-parse-error",
+      "name": "Parse OK?"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, message: $json.message, requestedBy: $json.user, device: $json.device }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        640,
+        320
+      ],
+      "id": "respond-error-parse",
+      "name": "Error Response (Parse)"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://seerr:5055/api/v1/search?query={{ $json.encodedTitle }}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        0
+      ],
+      "id": "seerr-search",
+      "name": "Seerr Search",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "seerr api key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process Seerr search results and build request\nconst searchData = $input.first().json;\nconst intent = $('Parse LLM Response').first().json;\nconst results = searchData.results || [];\n\nif (results.length === 0) {\n  return [{\n    json: {\n      error: true,\n      action: 'respond',\n      message: \"Couldn't find '\" + intent.title + \"' on Seerr. Check the title and try again.\",\n      user: intent.user,\n      device: intent.device\n    }\n  }];\n}\n\n// Find best matching result (prefer exact mediaType match)\nlet match = results.find(r => r.mediaType === intent.mediaType) || results[0];\nconst title = match.name || match.title;\nconst mediaType = match.mediaType;\nconst tmdbId = match.id;\n\n// Check availability status\nconst status = match.mediaInfo?.status || 1;\n\nif (status === 5) {\n  return [{\n    json: {\n      error: false,\n      action: 'respond',\n      message: \"'\" + title + \"' is already fully available on Plex!\",\n      user: intent.user,\n      device: intent.device\n    }\n  }];\n}\n\nif (status === 2 || status === 3) {\n  return [{\n    json: {\n      error: false,\n      action: 'respond',\n      message: \"'\" + title + \"' has already been requested and is being processed.\",\n      user: intent.user,\n      device: intent.device\n    }\n  }];\n}\n\n// Build request payload\nlet requestBody = {\n  mediaType: mediaType,\n  mediaId: tmdbId\n};\n\n// Route to anime servers if detected as anime\n// Seerr server IDs: Sonarr Anime=2, Radarr Anime=2\nif (intent.isAnime) {\n  if (mediaType === 'tv') {\n    requestBody.serverId = 2; // Sonarr Anime\n  } else {\n    requestBody.serverId = 2; // Radarr Anime\n  }\n}\n\nif (mediaType === 'tv') {\n  if (intent.seasons === 'all' || intent.seasons === null) {\n    requestBody.seasons = 'all';\n  } else if (Array.isArray(intent.seasons)) {\n    requestBody.seasons = intent.seasons;\n  }\n}\n\nconst seasonText = mediaType === 'tv'\n  ? (requestBody.seasons === 'all' ? ' (all seasons)' : ' season(s) ' + (Array.isArray(requestBody.seasons) ? requestBody.seasons.join(', ') : requestBody.seasons))\n  : '';\nconst animeText = intent.isAnime ? ' [anime]' : '';\n\nreturn [{\n  json: {\n    error: false,\n    action: 'request',\n    requestBody,\n    title,\n    seasonText,\n    animeText,\n    user: intent.user,\n    device: intent.device\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ],
+      "id": "process-results",
+      "name": "Process Results"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "check-action",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "request",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        0
+      ],
+      "id": "needs-request",
+      "name": "Needs Request?"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, message: $json.message, requestedBy: $json.user, device: $json.device }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1360,
+        160
+      ],
+      "id": "respond-already",
+      "name": "Already Available/Requested"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://seerr:5055/api/v1/request",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1360,
+        -60
+      ],
+      "id": "seerr-request",
+      "name": "Seerr Request",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "seerr api key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build final success response\nconst prev = $('Process Results').first().json;\nconst seerrResponse = $input.first().json;\n\nlet message;\nif (seerrResponse.statusCode && seerrResponse.statusCode >= 400) {\n  message = \"Failed to request '\" + prev.title + \"': \" + (seerrResponse.message || 'Seerr returned an error');\n  return [{\n    json: {\n      success: false,\n      message,\n      requestedBy: prev.user,\n      device: prev.device\n    }\n  }];\n}\n\nmessage = \"Requested '\" + prev.title + \"'\" + prev.seasonText + prev.animeText;\n\nreturn [{\n  json: {\n    success: true,\n    message,\n    requestedBy: prev.user,\n    device: prev.device\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        -60
+      ],
+      "id": "build-response",
+      "name": "Build Response"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: $json.success, message: $json.message, requestedBy: $json.requestedBy, device: $json.device }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1840,
+        -60
+      ],
+      "id": "respond-success",
+      "name": "Success Response"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, message: $json.message, requestedBy: $json.user, device: $json.device }) }}",
+        "options": {
+          "responseCode": 404
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        200
+      ],
+      "id": "respond-error-search",
+      "name": "Error Response (Not Found)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "check-search-error",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        200
+      ],
+      "id": "check-search-error",
+      "name": "Search OK?"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Input Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Input Valid?": {
+      "main": [
+        [
+          {
+            "node": "Error Response (Input)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gemini Extract Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Extract Intent": {
+      "main": [
+        [
+          {
+            "node": "Parse LLM Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse LLM Response": {
+      "main": [
+        [
+          {
+            "node": "Parse OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse OK?": {
+      "main": [
+        [
+          {
+            "node": "Error Response (Parse)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Seerr Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Seerr Search": {
+      "main": [
+        [
+          {
+            "node": "Process Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Results": {
+      "main": [
+        [
+          {
+            "node": "Search OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search OK?": {
+      "main": [
+        [
+          {
+            "node": "Error Response (Not Found)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Needs Request?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Request?": {
+      "main": [
+        [
+          {
+            "node": "Seerr Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Already Available/Requested",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Seerr Request": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Response": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "pinData": {}
+}

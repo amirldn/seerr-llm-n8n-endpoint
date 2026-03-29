@@ -1,171 +1,221 @@
-# Overseer Agent
+# Seerr LLM Request Agent
 
-OverseerAgent is a Node.js server that uses AI for natural language understanding and integrates with [Overseerr](https://overseerr.dev/) to request your favorite movies or TV shows using simple prompts.
+A natural language media request agent for [Seerr](https://github.com/fallenbagel/jellyseerr) / [Overseerr](https://overseerr.dev/). Ask it to download a movie or TV show in plain English and it handles the rest.
 
-## Features
+> *"Hey Siri, download Season 2 of Severance"*
 
-- Accepts natural language prompts to request movies or TV shows
-- Uses configurable AI models (Google Gemini, Anthropic Claude) to extract intent and media details
-- Searches and requests media via Overseerr API
-- Supports custom profiles (e.g., Hebrew content)
-- Docker-ready and easy to deploy
+Two implementations are included:
 
-## Requirements
+| | **n8n Workflow** | **Node.js Server** |
+|---|---|---|
+| Setup | Import a JSON file | Docker container or `npm start` |
+| LLM | Google Gemini Flash | Gemini or Claude |
+| Anime routing | Yes (auto-detect) | No |
+| User/device logging | Yes | No |
+| Dependencies | n8n instance | Node.js 20+ |
+| File | `workflow.json` | `src/` |
 
-- Node.js 20+
-- Access to [Overseerr](https://overseerr.dev/) instance and API key
-- Access to a supported AI provider:
-  - [Google Gemini API](https://ai.google.dev/) (e.g., Gemini 2.5 Pro)
-  - [Anthropic Claude API](https://docs.anthropic.com/claude/reference/getting-started) (specifically Claude 3.7 Sonnet when `LLM_PROVIDER=anthropic`)
+---
 
-## Setup
+## n8n Workflow (Recommended)
 
-1. **Clone the repository:**
+A zero-code n8n workflow that handles everything via webhook. Designed to be shared as an **Apple Shortcut** so friends can request media with a single tap — no Seerr account needed.
+
+### How It Works
+
+```
+User: "download season 3 of Severance"
+            |
+    n8n Webhook (POST)
+            |
+    Gemini Flash (extract intent)
+            |
+    Seerr Search API
+            |
+    Check availability
+            |
+    Seerr Request API
+            |
+User: {"success": true, "message": "Requested 'Severance' season(s) 3"}
+```
+
+### Features
+
+- Natural language parsing via Google Gemini Flash
+- Automatic anime detection and routing to anime Sonarr/Radarr instances
+- Skips already-available or already-requested media
+- Logs requesting user and device name
+- No authentication required on the webhook endpoint
+- Returns clean JSON for Shortcut integration
+
+### Setup
+
+#### 1. Import the Workflow
+
+1. Open your n8n instance
+2. **Workflows** > **Import from File** > select `workflow.json`
+
+#### 2. Create Credentials
+
+**Google Gemini API Key:**
+1. **Credentials** > **Add Credential** > search **"Google Gemini (PaLM)"**
+2. Paste your [Gemini API key](https://aistudio.google.com/apikey)
+3. Save
+
+**Seerr API Key:**
+1. **Credentials** > **Add Credential** > search **"Header Auth"**
+2. **Name**: `X-Api-Key`
+3. **Value**: your Seerr API key (Seerr > Settings > General)
+4. Rename the credential to "Seerr API Key"
+5. Save
+
+#### 3. Wire Up Credentials
+
+1. Open the imported workflow
+2. Click **"Gemini Extract Intent"** node > select your Gemini credential
+3. Click **"Seerr Search"** node > select your Seerr Header Auth credential
+4. Click **"Seerr Request"** node > same Seerr credential
+5. Save
+
+#### 4. Update Seerr URL (if needed)
+
+The workflow uses `http://seerr:5055` (Docker networking). Update in the **"Seerr Search"** and **"Seerr Request"** nodes if your setup differs.
+
+#### 5. Activate
+
+Toggle the workflow to **Active**. Webhook is live at:
+
+```
+https://your-n8n-domain.com/webhook/media-request
+```
+
+#### 6. Open the Webhook (if behind auth)
+
+If n8n is behind a reverse proxy with authentication (e.g. Authelia), ensure `/webhook/` bypasses auth. With [Saltbox](https://docs.saltbox.dev), this is handled automatically.
+
+### Usage
+
+```bash
+curl -X POST https://your-n8n-domain.com/webhook/media-request \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "download season 3 of Severance", "user": "Amir", "device": "Terminal"}'
+```
+
+#### Request Body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `prompt` | string | Yes | Natural language request |
+| `user` | string | No | Requesting user (for logging) |
+| `device` | string | No | Device name (for logging) |
+
+#### Response
+
+```json
+{
+  "success": true,
+  "message": "Requested 'Severance' season(s) 3",
+  "requestedBy": "Amir",
+  "device": "iPhone"
+}
+```
+
+#### Example Prompts
+
+| Prompt | Result |
+|--------|--------|
+| `download Oppenheimer` | Requests the movie |
+| `get me season 2 of The Bear` | Requests specific season |
+| `add all of Breaking Bad` | Requests all seasons |
+| `download demon slayer season 4` | Routes to anime Sonarr |
+| `get the anime movie Suzume` | Routes to anime Radarr |
+
+### Anime Routing
+
+The LLM automatically detects anime titles and routes them to dedicated Sonarr/Radarr anime instances via Seerr's `serverId` parameter. To configure:
+
+1. Add anime Sonarr/Radarr instances in Seerr (Settings > Services)
+2. Note their server IDs
+3. Update the IDs in the **"Process Results"** code node (`requestBody.serverId = 2`)
+
+No separate anime instances? It still works — requests go to your defaults.
+
+---
+
+## Node.js Server (Original)
+
+The original [OverseerAgent](https://github.com/omer182/OverseerAgent) by Omer S. — a standalone Node.js/TypeScript server.
+
+### Setup
+
+1. **Clone and install:**
    ```sh
-   git clone https://github.com/yourusername/overseer-mcp.git
-   cd overseer-mcp
-   ```
-2. **Install dependencies:**
-   ```sh
+   git clone https://github.com/amirldn/seerr-llm-n8n-endpoint.git
+   cd seerr-llm-n8n-endpoint
    npm install
    ```
-3. **Configure environment variables:**
-   Create a `.env` file and update the values:
-   
-   **For Google Gemini (recommended):**
+
+2. **Configure `.env`:**
    ```env
    LLM_PROVIDER=gemini
    LLM_API_KEY=your_gemini_api_key
    OVERSEERR_API_KEY=your_overseerr_api_key
-   OVERSEERR_URL=http://your_overseerr_instance
+   OVERSEERR_URL=http://your_seerr_instance
    ```
-   
-   **For Anthropic Claude (uses Claude 3.7 Sonnet):**
-   ```env
-   LLM_PROVIDER=anthropic
-   LLM_API_KEY=your_anthropic_api_key
-   OVERSEERR_API_KEY=your_overseerr_api_key
-   OVERSEERR_URL=http://your_overseerr_instance
-   ```
-4. **Run the server:**
+
+3. **Run:**
    ```sh
-   npm run build
-   ```
-   ```sh
-   npm start
-   ```
-5. **Access the API:**
-   Open your browser and go to `http://localhost::4000`
-
-
-## Usage
-
-Send a POST request to `/api/prompt` with a JSON body containing your prompt.
-
-
-```json
-{
-  "prompt": "download season 7 and 8 of lost"
-}
-```
-
-
-Language Support:
-
-```json
-{ "prompt": "Download the movie catch me if you can in spanish" }
-```
-
-4K example:
-
-```json
-{ "prompt": "Please download Avengers in 4K" }
-```
-
-Expected LLM extraction (example):
-
-```json
-{ "title": "The Avengers", "mediaType": "movie", "profile": 8 }
-```
-
-You can update `src/config/index.ts` with your own Sonarr/Radarr profile IDs by querying your services (for example: `http://homeserver.local:5055/api/v1/service/sonarr/0` and `http://homeserver.local:5055/api/v1/service/radarr/0`) and build your `profileMap` accordingly.
-
-
-Some other prompt examples:
-- "download all season of breaking bad"
-- "download Aladdin in hebrew"
-- "download the latest season of solo leveling"
-## Docker Compose / Portainer
-
-You can easily deploy OverseerAgent using Docker Compose, which also works seamlessly with Portainer.
-
-**Add to your Docker Compose**
-
-   ```yaml
-   version: "3.8"
-   services:
-     overseeragent:
-       image: ghcr.io/omer182/overseeragent:latest # Or your custom built image
-       container_name: overseeragent
-       ports:
-         - 4000:4000
-       environment:
-         - OVERSEERR_URL=http://overseerr:5055 # Example: if overseerr is in the same stack
-         - OVERSEERR_API_KEY=your_overseerr_api_key
-         # Currently supports gemini and anthropic LLM providers
-         - LLM_PROVIDER=gemini/anthropic 
-         - LLM_API_KEY=your_llm_api_key
-       restart: unless-stopped
+   npm run build && npm start
    ```
 
-   - Replace the environment variable values with your actual secrets.
-   - If you run Overseerr in the same stack, use the service name (`overseerr`) for `OVERSEERR_URL`.
+4. **API:** `http://localhost:4000/api/prompt`
 
-Your OverseerAgent API will be available at `http://<your-server>:4000`.
+### Docker Compose
 
-## Using Siri Shortcuts to Call Overseer Agent
+```yaml
+services:
+  overseeragent:
+    image: ghcr.io/omer182/overseeragent:latest
+    container_name: overseeragent
+    ports:
+      - 4000:4000
+    environment:
+      - OVERSEERR_URL=http://seerr:5055
+      - OVERSEERR_API_KEY=your_api_key
+      - LLM_PROVIDER=gemini
+      - LLM_API_KEY=your_llm_api_key
+    restart: unless-stopped
+```
 
-You can create a Siri Shortcut to request media using your voice. Here’s how:
+---
 
-1. **Ask for Text**
-   - Action: *Ask for Input*
-   - Prompt: `What do you want to download?`
-   - Store the result as `Prompt`
+## Apple Shortcut (Works with Both)
 
-2. **Get Contents of URL**
-   - Action: *Get Contents of URL*
-   - Method: `POST`
-   - URL: `http://<your-server>:4000/api/prompt`
-   - Request Body: `JSON`
-     - Add a field:
-       - Key: `prompt`
-       - Value: `Prompt` (the variable from step 1)
-   - Headers:
-     - Key: `Content-Type`
-     - Value: `application/json`
-   - Store the result as `Response`
+1. **Ask for Input** (Text): "What do you want to download?"
+2. **Get Name of Device**
+3. **Get Contents of URL**
+   - Method: POST
+   - URL: your webhook/API URL
+   - Body (JSON):
+     ```json
+     {
+       "prompt": "[input]",
+       "user": "YourName",
+       "device": "[device name]"
+     }
+     ```
+4. **Get Dictionary Value**: key `message`
+5. **Show Alert** / **Speak Text**: display the result
 
-3. **Get Dictionary Value**
-   - Action: *Get Dictionary Value*
-   - Get the value for key: `message` from `Response`
+Share via iCloud link. Each user's device name is captured automatically.
 
-4. **Speak Text**
-   - Action: *Speak Text*
-   - Speak the value from step 3
-
-**How it works:**  
-- Siri will ask what you want to download.
-- It will send your request to Overseer Agent.
-- It will read out the response message.
-
-You can trigger this shortcut by saying, “Hey Siri, [your shortcut name]”.
-
-## License
-Free to use for any purpose.
+---
 
 ## Credits
 
-Created by Omer S. aka Rio.
+- Original [OverseerAgent](https://github.com/omer182/OverseerAgent) by [Omer S.](https://github.com/omer182) and [kobik](https://github.com/kobik)
+- n8n workflow implementation by [Amir Maula](https://github.com/amirldn)
 
-**Contributors:**  
-- [kobik](https://github.com/kobik)
+## License
+
+MIT
