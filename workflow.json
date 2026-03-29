@@ -86,9 +86,9 @@
       "parameters": {
         "modelId": {
           "__rl": true,
-          "value": "models/gemini-2.5-flash",
+          "value": "models/gemini-2.5-flash-lite",
           "mode": "list",
-          "cachedResultName": "models/gemini-2.5-flash"
+          "cachedResultName": "models/gemini-2.5-flash-lite"
         },
         "messages": {
           "values": [
@@ -116,11 +116,12 @@
           "id": "REPLACE_ME",
           "name": "Google Gemini(PaLM) Api account"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
-        "jsCode": "// Parse and validate LLM JSON response\nconst input = $input.first().json;\nconst device = $('Validate Input').first().json.device;\n\n// Gemini returns content.parts[0].text\nlet llmText;\nif (input.content && input.content.parts && input.content.parts[0] && input.content.parts[0].text) {\n  llmText = input.content.parts[0].text;\n} else if (typeof input.text === 'string') {\n  llmText = input.text;\n} else if (typeof input.content === 'string') {\n  llmText = input.content;\n} else {\n  llmText = JSON.stringify(input);\n}\n\n// Strip markdown code fences if present\nllmText = llmText.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n\nlet intent;\ntry {\n  intent = JSON.parse(llmText);\n} catch (e) {\n  return [{\n    json: {\n      error: true,\n      message: \"Sorry, I couldn't understand that request. Try something like: 'download season 3 of Severance'\",\n      device\n    }\n  }];\n}\n\nif (!intent.title || !intent.mediaType) {\n  return [{\n    json: {\n      error: true,\n      message: \"Sorry, I couldn't extract a title from your request. Try being more specific.\",\n      device\n    }\n  }];\n}\n\nif (!['movie', 'tv'].includes(intent.mediaType)) {\n  intent.mediaType = 'tv';\n}\n\nreturn [{\n  json: {\n    title: intent.title,\n    mediaType: intent.mediaType,\n    seasons: intent.seasons || null,\n    isAnime: intent.isAnime === true,\n    encodedTitle: encodeURIComponent(intent.title),\n    device,\n    error: false\n  }\n}];"
+        "jsCode": "// Parse and validate LLM JSON response\nconst input = $input.first().json;\nconst device = $('Validate Input').first().json.device;\n\n// Check if Gemini errored (rate limit, auth, etc)\nif (input.error) {\n  const errorMsg = input.error.message || input.error.errorMessage || String(input.error);\n  \n  if (errorMsg.includes('quota') || errorMsg.includes('429') || errorMsg.includes('too many requests')) {\n    return [{\n      json: {\n        error: true,\n        message: \"The AI service is temporarily overloaded. Please try again in about 30 seconds.\",\n        device\n      }\n    }];\n  }\n  \n  return [{\n    json: {\n      error: true,\n      message: \"Something went wrong with the AI service. Please try again later or message Amir.\",\n      device\n    }\n  }];\n}\n\n// Gemini returns content.parts[0].text\nlet llmText;\nif (input.content && input.content.parts && input.content.parts[0] && input.content.parts[0].text) {\n  llmText = input.content.parts[0].text;\n} else if (typeof input.text === 'string') {\n  llmText = input.text;\n} else if (typeof input.content === 'string') {\n  llmText = input.content;\n} else {\n  llmText = JSON.stringify(input);\n}\n\n// Strip markdown code fences if present\nllmText = llmText.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n\nlet intent;\ntry {\n  intent = JSON.parse(llmText);\n} catch (e) {\n  return [{\n    json: {\n      error: true,\n      message: \"Sorry, I couldn't understand that request. Try something like: 'download season 3 of Severance'\",\n      device\n    }\n  }];\n}\n\nif (!intent.title || !intent.mediaType) {\n  return [{\n    json: {\n      error: true,\n      message: \"Sorry, I couldn't extract a title from your request. Try being more specific.\",\n      device\n    }\n  }];\n}\n\nif (!['movie', 'tv'].includes(intent.mediaType)) {\n  intent.mediaType = 'tv';\n}\n\nreturn [{\n  json: {\n    title: intent.title,\n    mediaType: intent.mediaType,\n    seasons: intent.seasons || null,\n    isAnime: intent.isAnime === true,\n    encodedTitle: encodeURIComponent(intent.title),\n    device,\n    error: false\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -207,12 +208,12 @@
     },
     {
       "parameters": {
-        "jsCode": "// Process Seerr search results and build request\nconst searchData = $input.first().json;\nconst intent = $('Parse LLM Response').first().json;\nconst results = searchData.results || [];\n\nif (results.length === 0) {\n  return [{\n    json: {\n      error: true,\n      action: 'respond',\n      message: \"Couldn't find '\" + intent.title + \"' on Seerr. Check the title and try again.\",\n      device: intent.device\n    }\n  }];\n}\n\nlet match = results.find(r => r.mediaType === intent.mediaType) || results[0];\nconst title = match.name || match.title;\nconst mediaType = match.mediaType;\nconst tmdbId = match.id;\nconst seerrUrl = 'https://seerr.YOUR_DOMAIN/' + mediaType + '/' + tmdbId;\n\nconst status = match.mediaInfo?.status || 1;\n\nif (status === 5) {\n  return [{\n    json: {\n      error: false,\n      action: 'respond',\n      message: \"'\" + title + \"' is already fully available on Plex!\",\n      url: seerrUrl,\n      device: intent.device\n    }\n  }];\n}\n\nif (status === 2 || status === 3) {\n  return [{\n    json: {\n      error: false,\n      action: 'respond',\n      message: \"'\" + title + \"' has already been requested and is being processed.\",\n      url: seerrUrl,\n      device: intent.device\n    }\n  }];\n}\n\nlet requestBody = {\n  mediaType: mediaType,\n  mediaId: tmdbId\n};\n\nif (intent.isAnime) {\n  if (mediaType === 'tv') {\n    requestBody.serverId = 2;\n  } else {\n    requestBody.serverId = 2;\n  }\n}\n\nif (mediaType === 'tv') {\n  if (intent.seasons === 'all' || intent.seasons === null) {\n    requestBody.seasons = 'all';\n  } else if (Array.isArray(intent.seasons)) {\n    requestBody.seasons = intent.seasons;\n  }\n}\n\nconst seasonText = mediaType === 'tv'\n  ? (requestBody.seasons === 'all' ? ' (all seasons)' : ' season(s) ' + (Array.isArray(requestBody.seasons) ? requestBody.seasons.join(', ') : requestBody.seasons))\n  : '';\nconst animeText = intent.isAnime ? ' [anime]' : '';\n\nreturn [{\n  json: {\n    error: false,\n    action: 'request',\n    requestBody,\n    title,\n    seasonText,\n    animeText,\n    url: seerrUrl,\n    device: intent.device\n  }\n}];"
+        "jsCode": "// Process detailed Seerr data and generate verbose response\nconst details = $input.first().json;\nconst intent = $('Parse LLM Response').first().json;\nconst matchInfo = $('Pick Best Match').first().json;\nconst title = details.name || details.title || matchInfo.title;\nconst mediaType = matchInfo.mediaType;\nconst tmdbId = matchInfo.tmdbId;\nconst seerrUrl = 'https://seerr.YOUR_DOMAIN/' + mediaType + '/' + tmdbId;\nconst mi = details.mediaInfo || {};\nconst plexUrl = mi.iOSPlexUrl || null;\nconst status = mi.status || 1;\n\n// --- MOVIE HANDLING ---\nif (mediaType === 'movie') {\n  // Check if already available\n  if (status === 5) {\n    return [{\n      json: {\n        error: false,\n        action: 'respond',\n        message: \"'\" + title + \"' is already available on Plex!\",\n        url: seerrUrl,\n        plexUrl,\n        device: intent.device\n      }\n    }];\n  }\n\n  // Check if already requested\n  if (status === 2 || status === 3) {\n    const requests = mi.requests || [];\n    const lastReq = requests[requests.length - 1];\n    const reqDate = lastReq ? new Date(lastReq.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'recently';\n    return [{\n      json: {\n        error: false,\n        action: 'respond',\n        message: \"'\" + title + \"' was already requested on \" + reqDate + \". If the download seems stuck, message Amir.\",\n        url: seerrUrl,\n        device: intent.device\n      }\n    }];\n  }\n\n  // Check if not yet released\n  const releaseDate = details.releaseDate;\n  const isUnreleased = releaseDate && new Date(releaseDate) > new Date();\n  let movieMsg = '';\n  if (isUnreleased) {\n    const relDateStr = new Date(releaseDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });\n    movieMsg = \"'\" + title + \"' hasn't been released yet (expected \" + relDateStr + \"). Requesting it now \u2014 it'll download automatically when available.\";\n  }\n\n  // Build request\n  let requestBody = { mediaType: 'movie', mediaId: tmdbId };\n  if (intent.isAnime) requestBody.serverId = 2;\n\n  return [{\n    json: {\n      error: false,\n      action: 'request',\n      requestBody,\n      title,\n      successMessage: movieMsg || \"Done! '\" + title + \"' has been requested and should be available soon.\",\n      url: seerrUrl,\n      device: intent.device\n    }\n  }];\n}\n\n// --- TV HANDLING ---\nconst seasons = details.seasons || [];\nconst miSeasons = mi.seasons || [];\nconst requests = mi.requests || [];\n\n// Figure out which seasons the user wants\nlet wantedSeasons = [];\nif (intent.seasons === 'all' || intent.seasons === null) {\n  wantedSeasons = seasons.filter(s => s.seasonNumber > 0).map(s => s.seasonNumber);\n} else if (Array.isArray(intent.seasons)) {\n  wantedSeasons = intent.seasons;\n}\n\n// Categorize each wanted season\nconst available = [];\nconst pending = [];\nconst notAired = [];\nconst toRequest = [];\n\nfor (const sNum of wantedSeasons) {\n  const seasonInfo = seasons.find(s => s.seasonNumber === sNum);\n  const miSeason = miSeasons.find(s => s.seasonNumber === sNum);\n  const seasonStatus = miSeason ? miSeason.status : 1;\n\n  // Check if season has aired\n  if (seasonInfo && seasonInfo.episodeCount === 0) {\n    const airDate = seasonInfo.airDate;\n    notAired.push({ num: sNum, airDate });\n    continue;\n  }\n\n  // Check if already available on Plex\n  if (seasonStatus === 5) {\n    available.push(sNum);\n    continue;\n  }\n\n  // Check if already requested/pending\n  const existingReq = requests.find(r =>\n    r.seasons && r.seasons.some(rs => rs.seasonNumber === sNum && rs.status === 2)\n  );\n  if (existingReq) {\n    const reqDate = new Date(existingReq.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });\n    pending.push({ num: sNum, date: reqDate });\n    continue;\n  }\n\n  toRequest.push(sNum);\n}\n\n// Build verbose message\nlet messageParts = [];\n\nif (available.length > 0) {\n  messageParts.push(\"Season\" + (available.length > 1 ? \"s \" : \" \") + available.join(', ') + (available.length > 1 ? \" are\" : \" is\") + \" already available on Plex.\");\n}\n\nif (pending.length > 0) {\n  const pendingNums = pending.map(p => p.num).join(', ');\n  const lastDate = pending[pending.length - 1].date;\n  messageParts.push(\"Season\" + (pending.length > 1 ? \"s \" : \" \") + pendingNums + \" already requested (since \" + lastDate + \"). If the download seems stuck, message Amir.\");\n}\n\nif (notAired.length > 0) {\n  for (const na of notAired) {\n    if (na.airDate) {\n      const dateStr = new Date(na.airDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });\n      messageParts.push(\"Season \" + na.num + \" hasn't aired yet \u2014 expected \" + dateStr + \". It will be automatically downloaded when it airs.\");\n    } else {\n      messageParts.push(\"Season \" + na.num + \" hasn't aired yet (no release date announced). It will be automatically downloaded when it airs.\");\n    }\n  }\n}\n\nif (toRequest.length > 0) {\n  messageParts.push(\"Requesting season\" + (toRequest.length > 1 ? \"s \" : \" \") + toRequest.join(', ') + \" now.\");\n}\n\n// If nothing to request, just respond\nif (toRequest.length === 0) {\n  return [{\n    json: {\n      error: false,\n      action: 'respond',\n      message: \"'\" + title + \"': \" + messageParts.join(' '),\n      url: seerrUrl,\n      plexUrl: available.length > 0 ? plexUrl : null,\n      device: intent.device\n    }\n  }];\n}\n\n// Build request payload\nlet requestBody = { mediaType: 'tv', mediaId: tmdbId, seasons: toRequest };\nif (intent.isAnime) requestBody.serverId = 2;\n\nconst animeText = intent.isAnime ? ' [anime]' : '';\n\nreturn [{\n  json: {\n    error: false,\n    action: 'request',\n    requestBody,\n    title,\n    successMessage: \"'\" + title + \"': \" + messageParts.join(' ') + animeText,\n    url: seerrUrl,\n    plexUrl: available.length > 0 ? plexUrl : null,\n    device: intent.device\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        880,
+        1320,
         0
       ],
       "id": "process-results",
@@ -245,7 +246,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1120,
+        1540,
         0
       ],
       "id": "needs-request",
@@ -254,7 +255,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ success: true, message: $json.message, url: $json.url, device: $json.device }) }}",
+        "responseBody": "={{ JSON.stringify({ success: true, message: $json.message, url: $json.url, plexUrl: $json.plexUrl || null, device: $json.device }) }}",
         "options": {}
       },
       "type": "n8n-nodes-base.respondToWebhook",
@@ -280,7 +281,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1360,
+        1780,
         -60
       ],
       "id": "seerr-request",
@@ -294,7 +295,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Build final success response\nconst prev = $('Process Results').first().json;\nconst seerrResponse = $input.first().json;\n\nlet message;\nif (seerrResponse.statusCode && seerrResponse.statusCode >= 400) {\n  message = \"Failed to request '\" + prev.title + \"': \" + (seerrResponse.message || 'Seerr returned an error');\n  return [{\n    json: {\n      success: false,\n      message,\n      url: prev.url,\n      device: prev.device\n    }\n  }];\n}\n\nmessage = \"Requested '\" + prev.title + \"'\" + prev.seasonText + prev.animeText;\n\nreturn [{\n  json: {\n    success: true,\n    message,\n    url: prev.url,\n    device: prev.device\n  }\n}];"
+        "jsCode": "// Build final success response\nconst prev = $('Process Results').first().json;\nconst seerrResponse = $input.first().json;\n\nif (seerrResponse.statusCode && seerrResponse.statusCode >= 400) {\n  return [{\n    json: {\n      success: false,\n      message: \"Failed to request '\" + prev.title + \"': \" + (seerrResponse.message || 'Seerr returned an error. Message Amir if this keeps happening.'),\n      url: prev.url,\n      device: prev.device\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    success: true,\n    message: prev.successMessage,\n    url: prev.url,\n    plexUrl: prev.plexUrl || null,\n    device: prev.device\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -308,7 +309,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ success: $json.success, message: $json.message, url: $json.url, device: $json.device }) }}",
+        "responseBody": "={{ JSON.stringify({ success: $json.success, message: $json.message, url: $json.url, plexUrl: $json.plexUrl || null, device: $json.device }) }}",
         "options": {}
       },
       "type": "n8n-nodes-base.respondToWebhook",
@@ -370,6 +371,42 @@
       ],
       "id": "check-search-error",
       "name": "Search OK?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pick best matching result from search\nconst searchData = $input.first().json;\nconst intent = $('Parse LLM Response').first().json;\nconst results = searchData.results || [];\n\nif (results.length === 0) {\n  return [{\n    json: {\n      error: true,\n      message: \"Couldn't find '\" + intent.title + \"' on Seerr. Check the title and try again.\",\n      device: intent.device\n    }\n  }];\n}\n\nlet match = results.find(r => r.mediaType === intent.mediaType) || results[0];\n\nreturn [{\n  json: {\n    tmdbId: match.id,\n    mediaType: match.mediaType,\n    title: match.name || match.title,\n    error: false\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ],
+      "id": "422dd941-5d94-4b8e-a112-69637a141d99",
+      "name": "Pick Best Match"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://seerr:5055/api/v1/{{ $json.mediaType }}/{{ $json.tmdbId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        0
+      ],
+      "id": "55c0d6c8-c1a4-47a2-8cae-dcd7c32d2944",
+      "name": "Seerr Get Details",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "seerr api key"
+        }
+      }
     }
   ],
   "connections": {
@@ -457,14 +494,14 @@
       "main": [
         [
           {
-            "node": "Process Results",
+            "node": "Pick Best Match",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Process Results": {
+    "Pick Best Match": {
       "main": [
         [
           {
@@ -484,6 +521,28 @@
             "index": 0
           }
         ],
+        [
+          {
+            "node": "Seerr Get Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Seerr Get Details": {
+      "main": [
+        [
+          {
+            "node": "Process Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Results": {
+      "main": [
         [
           {
             "node": "Needs Request?",
@@ -536,8 +595,8 @@
   },
   "settings": {
     "executionOrder": "v1",
-    "callerPolicy": "workflowsFromSameOwner",
-    "availableInMCP": false
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed"
   },
   "pinData": {}
 }
